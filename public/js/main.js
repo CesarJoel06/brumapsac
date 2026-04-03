@@ -179,7 +179,7 @@
       images: ['public/img/folder_1.jpg','public/img/folder_2.jpg','public/img/folder_3.jpg','public/img/folder_4.jpg']
     },
     mica: {
-      caption: 'Micas / fundas en PVC – protección y presentación de documentos',
+      caption: 'Mica transparente – presentación limpia y protección visual de documentos',
       images: ['public/img/mica_1.jpg','public/img/mica_2.jpg','public/img/mica_3.jpg','public/img/mica_4.jpg']
     },
     portapapel: {
@@ -195,7 +195,7 @@
       images: ['public/img/portadocumentos_1.jpg','public/img/portadocumentos_2.jpg','public/img/portadocumentos_3.jpg','public/img/portadocumentos_4.jpg']
     },
     portacredenciales: {
-      caption: 'Porta credenciales – perforaciones, broches y personalización por evento',
+      caption: 'Porta credenciales – formato transparente para identificación y presentación',
       images: ['public/img/portacredenciales_1.jpg','public/img/portacredenciales_2.jpg','public/img/portacredenciales_3.jpg','public/img/portacredenciales_4.jpg']
     },
     nosotros: {
@@ -341,30 +341,135 @@
   btnNext && btnNext.addEventListener('click', nextImage);
 
   /* =========================
-   * Formulario → WhatsApp (sin backend)
+   * Mapa embebido con loader
+   * ========================= */
+  const mapEmbed = document.querySelector('[data-map-embed]');
+  const mapLoader = document.querySelector('[data-map-loader]');
+  const hideMapLoader = () => {
+    if (!mapLoader) return;
+    mapLoader.classList.add('is-hidden');
+  };
+
+  if (mapEmbed) {
+    mapEmbed.addEventListener('load', () => {
+      window.setTimeout(hideMapLoader, 220);
+    }, { once: true });
+
+    window.setTimeout(() => {
+      if (mapLoader && !mapLoader.classList.contains('is-hidden')) {
+        hideMapLoader();
+      }
+    }, 4500);
+  }
+
+  /* =========================
+   * Formulario → WhatsApp / Correo
    * ========================= */
   const quoteForm = document.getElementById('quote-form');
-  quoteForm && quoteForm.addEventListener('submit', (e) => {
-    e.preventDefault();
+  const sendEmailBtn = document.querySelector('[data-send-email]');
+  const formStatus = document.getElementById('form-status');
+  const FORM_EMAIL_ENDPOINT = 'https://formsubmit.co/ajax/ventas@brumapsac.com';
 
+  const setFormStatus = (message = '', type = '') => {
+    if (!formStatus) return;
+    formStatus.textContent = message;
+    formStatus.className = 'form__status' + (type ? ` is-${type}` : '');
+  };
+
+  const buildQuotePayload = () => {
     const fd = new FormData(quoteForm);
-    const nombre = String(fd.get('nombre') || '').trim();
-    const empresa = String(fd.get('empresa') || '').trim();
-    const producto = String(fd.get('producto') || '').trim();
-    const cantidad = String(fd.get('cantidad') || '').trim();
-    const detalles = String(fd.get('detalles') || '').trim();
+    const payload = {
+      nombre: String(fd.get('nombre') || '').trim(),
+      empresa: String(fd.get('empresa') || '').trim(),
+      correo: String(fd.get('correo') || '').trim(),
+      telefono: String(fd.get('telefono') || '').trim(),
+      producto: String(fd.get('producto') || '').trim(),
+      cantidad: String(fd.get('cantidad') || '').trim(),
+      detalles: String(fd.get('detalles') || '').trim()
+    };
 
     const lines = [
-      'Hola BRUMAP, quisiera cotizar:',
-      `Producto: ${producto}`,
-      `Cantidad: ${cantidad}`,
-      `Detalles/medidas: ${detalles}`,
-      `Nombre: ${nombre}`
+      'Hola BRUMAP, quisiera cotizar un producto',
+      `Producto: ${payload.producto}`,
+      `Cantidad: ${payload.cantidad}`,
+      `Detalles/medidas: ${payload.detalles}`,
+      `Nombre: ${payload.nombre}`,
+      `Correo: ${payload.correo}`,
+      `Celular/WhatsApp: ${payload.telefono}`
     ];
-    if (empresa) lines.push(`Empresa: ${empresa}`);
 
-    const message = lines.join('\n');
-    const url = 'https://wa.me/51967647745?text=' + encodeURIComponent(message);
+    if (payload.empresa) lines.push(`Empresa: ${payload.empresa}`);
+
+    return { payload, message: lines.join('\n') };
+  };
+
+  const validateQuoteForm = () => {
+    if (!quoteForm) return false;
+    const isValid = quoteForm.reportValidity();
+    if (!isValid) {
+      setFormStatus('Completa los campos obligatorios antes de enviar.', 'error');
+    }
+    return isValid;
+  };
+
+  quoteForm && quoteForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!validateQuoteForm()) return;
+
+    const { message } = buildQuotePayload();
+    const url = 'https://wa.me/51922416857?text=' + encodeURIComponent(message);
+    setFormStatus('Abriendo WhatsApp con tu solicitud lista para enviar…', 'info');
     window.open(url, '_blank', 'noopener');
+  });
+
+  sendEmailBtn && sendEmailBtn.addEventListener('click', async () => {
+    if (!validateQuoteForm()) return;
+
+    const { payload, message } = buildQuotePayload();
+    const submitData = new FormData();
+    submitData.append('nombre', payload.nombre);
+    submitData.append('empresa', payload.empresa || 'No especificada');
+    submitData.append('correo', payload.correo);
+    submitData.append('telefono', payload.telefono);
+    submitData.append('producto', payload.producto);
+    submitData.append('cantidad', payload.cantidad);
+    submitData.append('detalles', payload.detalles);
+    submitData.append('_subject', `Nueva cotización web - ${payload.producto}`);
+    submitData.append('_captcha', 'false');
+    submitData.append('_template', 'table');
+    submitData.append('_replyto', payload.correo);
+    submitData.append('mensaje', message);
+
+    const originalLabel = sendEmailBtn.textContent;
+    sendEmailBtn.disabled = true;
+    sendEmailBtn.textContent = 'Enviando...';
+    setFormStatus('Enviando cotización por correo…', 'info');
+
+    try {
+      const response = await fetch(FORM_EMAIL_ENDPOINT, {
+        method: 'POST',
+        body: submitData,
+        headers: {
+          Accept: 'application/json'
+        }
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.message || 'No se pudo enviar el correo.');
+      }
+
+      setFormStatus('Tu solicitud fue enviada por correo correctamente a BRUMAP.', 'success');
+      quoteForm.reset();
+    } catch (error) {
+      console.error(error);
+      setFormStatus('No se pudo enviar automáticamente. Se abrirá tu correo como alternativa.', 'error');
+      const subject = 'Cotización BRUMAP';
+      const mailto = 'mailto:ventas@brumapsac.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(message);
+      window.location.href = mailto;
+    } finally {
+      sendEmailBtn.disabled = false;
+      sendEmailBtn.textContent = originalLabel;
+    }
   });
 })();
